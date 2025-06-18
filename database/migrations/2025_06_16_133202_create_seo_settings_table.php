@@ -11,11 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('catalogues', function (Blueprint $table) {
+        Schema::create('seo_settings', function (Blueprint $table) {
             $table->id();
             $table->foreignId('service_id')->constrained()->onDelete('cascade');
-            $table->text('description');
-            $table->string('image');
+            $table->string('meta_title');
+            $table->text('meta_description');
+            $table->string('keywords');
             $table->timestamps();
         });
     }
@@ -25,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('catalogues');
+        Schema::dropIfExists('seo_settings');
     }
 };
