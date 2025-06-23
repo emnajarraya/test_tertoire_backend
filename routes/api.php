@@ -12,9 +12,9 @@ Route::get('/user', function (Request $request) {
 // Routes des services
 Route::get('/services', [ServiceController::class, 'index']);
 Route::get('/services/{slug}', [ServiceController::class, 'show']);
-Route::post('/services', [ServiceController::class, 'store']);
-Route::delete('/services/{slug}', [ServiceController::class, 'destroy']);
+// Route::post('/services', [ServiceController::class, 'store']);
+// Route::delete('/services/{slug}', [ServiceController::class, 'destroy']);
 
 // Routes des contacts
-Route::post('/contact', [ContactController::class, 'store']);
-Route::delete('/contact/{id}', [ContactController::class, 'destroy']);
+// Route::post('/contact', [ContactController::class, 'store']);
+// Route::delete('/contact/{id}', [ContactController::class, 'destroy']);

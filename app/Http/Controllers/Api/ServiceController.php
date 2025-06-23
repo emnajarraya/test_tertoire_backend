@@ -36,12 +36,11 @@ class ServiceController extends Controller
     public function show(string $slug): JsonResponse
     {
         try {
-            $service = Cache::remember("services.{$slug}", 3600, function () use ($slug) {
-                return Service::with(['seoSetting', 'catalogues'])
-                    ->where('slug', $slug)
-                    ->firstOrFail();
-            });
+            $service = Service::with(['seoSetting', 'catalogues'])
+                ->where('slug', $slug)
+                ->firstOrFail();
 
+            //    $service = Service::where('nom', $slug)->firstOrFail();
             return response()->json($service);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['error' => 'Service non trouvé'], 404);
