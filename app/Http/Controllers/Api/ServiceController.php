@@ -19,9 +19,7 @@ class ServiceController extends Controller
     public function index(): JsonResponse
     {
         try {
-            $services = Cache::remember('services.all', 3600, function () {
-                return Service::with(['seoSetting', 'catalogues'])->get();
-            });
+            $services = Service::with(['seoSetting', 'catalogues'])->get();
 
             return response()->json($services);
         } catch (\Exception $e) {
