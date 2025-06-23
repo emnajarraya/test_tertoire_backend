@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use App\Models\Service;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
@@ -38,7 +37,6 @@ class ServiceController extends Controller
                 ->where('slug', $slug)
                 ->firstOrFail();
 
-            //    $service = Service::where('nom', $slug)->firstOrFail();
             return response()->json($service);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['error' => 'Service non trouvé'], 404);
@@ -66,24 +64,16 @@ class ServiceController extends Controller
 
             $validatedData['slug'] = Str::slug($validatedData['nom']);
 
-            // Handle image if provided
-            if (isset($validatedData['image']) && Str::startsWith($validatedData['image'], 'data:image')) {
-                try {
-                    $image = $validatedData['image'];
-                    $imageData = base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $image));
-                    $imageName = Str::random(40) . '.jpg';
-                    Storage::disk('public')->put('images/' . $imageName, $imageData);
-                    $validatedData['image'] = 'images/' . $imageName;
-                } catch (\Exception $e) {
-                    Log::error('Error saving image: ' . $e->getMessage());
-                    $validatedData['image'] = null;
-                }
+            // Handle base64 image if provided
+            if (isset($validatedData['image']) && !empty($validatedData['image'])) {
+                $imagePath = $this->handleBase64Image($validatedData['image']);
+                $validatedData['image'] = $imagePath;
             }
 
             $service = Service::create([
                 'nom' => $validatedData['nom'],
                 'description' => $validatedData['description'],
-                'image' => $validatedData['image'],
+                'image' => $validatedData['image'] ?? null,
                 'slug' => $validatedData['slug']
             ]);
 
@@ -92,8 +82,6 @@ class ServiceController extends Controller
                 'meta_description' => $validatedData['seo']['meta_description'],
                 'keywords' => $validatedData['seo']['keywords']
             ]);
-
-            Cache::forget('services.all');
 
             return response()->json([
                 'message' => 'Service créé avec succès',
@@ -129,22 +117,22 @@ class ServiceController extends Controller
                 $validatedData['slug'] = Str::slug($validatedData['nom']);
             }
 
-            // Handle image update if provided
-            if (isset($validatedData['image']) && Str::startsWith($validatedData['image'], 'data:image')) {
-                try {
-                    // Delete old image if exists
-                    if ($service->image) {
-                        Storage::disk('public')->delete($service->image);
-                    }
+            // Handle base64 image update if provided
+            if (isset($validatedData['image']) && !empty($validatedData['image'])) {
+                // Delete old image if exists
+                if ($service->image && Storage::disk('public')->exists($service->image)) {
+                    Storage::disk('public')->delete($service->image);
+                    Log::info('Deleted old image: ' . $service->image);
+                }
 
-                    $image = $validatedData['image'];
-                    $imageData = base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $image));
-                    $imageName = Str::random(40) . '.jpg';
-                    Storage::disk('public')->put('images/' . $imageName, $imageData);
-                    $validatedData['image'] = 'images/' . $imageName;
-                } catch (\Exception $e) {
-                    Log::error('Error updating image: ' . $e->getMessage());
+                $imagePath = $this->handleBase64Image($validatedData['image']);
+                if ($imagePath) {
+                    $validatedData['image'] = $imagePath;
+                    Log::info('New image saved: ' . $imagePath);
+                } else {
+                    // If image processing failed, don't update the image field
                     unset($validatedData['image']);
+                    Log::warning('Image processing failed, keeping existing image');
                 }
             }
 
@@ -157,9 +145,6 @@ class ServiceController extends Controller
                     'keywords' => $validatedData['seo']['keywords']
                 ]);
             }
-
-            Cache::forget("services.{$slug}");
-            Cache::forget('services.all');
 
             return response()->json([
                 'message' => 'Service mis à jour avec succès',
@@ -184,21 +169,18 @@ class ServiceController extends Controller
             $service = Service::where('slug', $slug)->firstOrFail();
 
             // Delete image if exists
-            if ($service->image) {
+            if ($service->image && Storage::disk('public')->exists($service->image)) {
                 Storage::disk('public')->delete($service->image);
             }
 
             // Delete catalogues images if they exist
             foreach ($service->catalogues as $catalogue) {
-                if ($catalogue->image) {
+                if ($catalogue->image && Storage::disk('public')->exists($catalogue->image)) {
                     Storage::disk('public')->delete($catalogue->image);
                 }
             }
 
             $service->delete();
-
-            Cache::forget("services.{$slug}");
-            Cache::forget('services.all');
 
             return response()->json([
                 'message' => 'Service supprimé avec succès'
@@ -208,6 +190,93 @@ class ServiceController extends Controller
         } catch (\Exception $e) {
             Log::error('Error deleting service: ' . $e->getMessage());
             return response()->json(['error' => 'Erreur lors de la suppression du service'], 500);
+        }
+    }
+
+    /**
+     * Handle base64 image processing
+     */
+    private function handleBase64Image(string $base64Image): ?string
+    {
+        try {
+            // Check if it's a valid base64 image
+            if (!Str::startsWith($base64Image, 'data:image/')) {
+                Log::error('Invalid base64 image format - missing data:image/ prefix');
+                return null;
+            }
+
+            // Extract image type and base64 data
+            preg_match('/data:image\/([a-zA-Z0-9]+);base64,/', $base64Image, $matches);
+
+            if (empty($matches[1])) {
+                Log::error('Could not extract image type from base64 string');
+                return null;
+            }
+
+            $imageType = strtolower($matches[1]);
+
+            // Validate image type
+            $allowedTypes = ['jpeg', 'jpg', 'png', 'gif', 'webp'];
+            if (!in_array($imageType, $allowedTypes)) {
+                Log::error('Unsupported image type: ' . $imageType);
+                return null;
+            }
+
+            // Extract base64 data
+            $base64Data = preg_replace('/^data:image\/[a-zA-Z0-9]+;base64,/', '', $base64Image);
+
+            if (empty($base64Data)) {
+                Log::error('Empty base64 data after extraction');
+                return null;
+            }
+
+            // Decode base64
+            $imageData = base64_decode($base64Data, true);
+
+            if ($imageData === false) {
+                Log::error('Failed to decode base64 image data');
+                return null;
+            }
+
+            // Validate decoded data
+            if (strlen($imageData) === 0) {
+                Log::error('Decoded image data is empty');
+                return null;
+            }
+
+            // Generate unique filename with correct extension
+            $extension = $imageType === 'jpeg' ? 'jpg' : $imageType;
+            $imageName = Str::random(40) . '.' . $extension;
+            $imagePath = 'images/' . $imageName;
+
+            // Ensure images directory exists
+            if (!Storage::disk('public')->exists('images')) {
+                Storage::disk('public')->makeDirectory('images');
+                Log::info('Created images directory');
+            }
+
+            // Save the image
+            $saved = Storage::disk('public')->put($imagePath, $imageData);
+
+            if (!$saved) {
+                Log::error('Failed to save image to storage');
+                return null;
+            }
+
+            // Verify the file was actually saved
+            if (!Storage::disk('public')->exists($imagePath)) {
+                Log::error('Image file does not exist after save operation');
+                return null;
+            }
+
+            $fileSize = Storage::disk('public')->size($imagePath);
+            Log::info("Image saved successfully: {$imagePath} (Size: {$fileSize} bytes)");
+
+            return $imagePath;
+        } catch (\Exception $e) {
+            Log::error('Exception in handleBase64Image: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return null;
         }
     }
 }
