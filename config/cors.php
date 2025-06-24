@@ -3,7 +3,10 @@
 return [
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
     'allowed_methods' => ['*'],
-    'allowed_origins' => ['http://localhost:8080'], // Vite's default development port
+    'allowed_origins' => [
+        'http://localhost:8081', // React user interface
+        'http://localhost:8080', // Admin dashboard
+    ], // Vite's default development port
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['*'],
     'exposed_headers' => [],
