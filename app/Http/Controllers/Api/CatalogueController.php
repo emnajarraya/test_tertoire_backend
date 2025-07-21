@@ -70,50 +70,60 @@ class CatalogueController extends Controller
      * Store a newly created catalogue
      */
     public function store(Request $request): JsonResponse
-    {
-        try {
-            $validated = $request->validate([
-                'service_id' => 'required|exists:services,id',
-                'description' => 'required|string|max:1000',
-                'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048', // File upload
-                'image_base64' => 'nullable|string' // Base64 image
-            ]);
+{
+    try {
+        $validated = $request->validate([
+            'service_id' => 'required|exists:services,id',
+            'description' => 'nullable|string|max:1000',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'image_base64' => 'nullable|string'
+        ]);
 
-            // Handle image upload (file or base64)
-            $imagePath = null;
-            if ($request->hasFile('image')) {
-                $imagePath = $request->file('image')->store('catalogues', 'public');
-            } elseif (!empty($validated['image_base64'])) {
-                $imagePath = $this->handleBase64Image($validated['image_base64']);
-            }
-
-            $catalogue = Catalogue::create([
-                'service_id' => $validated['service_id'],
-                'description' => $validated['description'],
-                'image' => $imagePath
-            ]);
-
-            $catalogue->load('service');
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Catalogue créé avec succès',
-                'data' => $catalogue
-            ], 201);
-        } catch (ValidationException $e) {
+        // At least one of description or image must be provided
+        if (empty($validated['description']) && !$request->hasFile('image') && empty($validated['image_base64'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Données invalides',
-                'errors' => $e->errors()
+                'message' => 'Au moins une description ou une image doit être fournie'
             ], 422);
-        } catch (\Exception $e) {
-            Log::error('Error creating catalogue: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors de la création du catalogue'
-            ], 500);
         }
+
+        // Handle image upload (file or base64)
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            $imagePath = $request->file('image')->store('catalogues', 'public');
+        } elseif (!empty($validated['image_base64'])) {
+            $imagePath = $this->handleBase64Image($validated['image_base64']);
+        }
+
+        $catalogue = Catalogue::create([
+            'service_id' => $validated['service_id'],
+            'description' => $validated['description'] ?? null, // Use null if description is empty
+            'image' => $imagePath
+        ]);
+
+        $catalogue->load('service');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Catalogue créé avec succès',
+            'data' => $catalogue
+        ], 201);
+    } catch (ValidationException $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Données invalides',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        Log::error('Error creating catalogue: ' . $e->getMessage());
+        Log::error('Request data: ' . json_encode($request->all()));
+        Log::error('Stack trace: ' . $e->getTraceAsString()); // Add stack trace for debugging
+        return response()->json([
+            'success' => false,
+            'message' => 'Erreur lors de la création du catalogue: ' . $e->getMessage() // Include error message
+        ], 500);
     }
+}
 
     /**
      * Display the specified catalogue
@@ -160,7 +170,7 @@ class CatalogueController extends Controller
 
             $validated = $request->validate([
                 'service_id' => 'sometimes|exists:services,id',
-                'description' => 'sometimes|string|max:1000',
+                'description' => 'nullable|string|max:1000',
                 'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
                 'image_base64' => 'nullable|string'
             ]);
@@ -171,8 +181,8 @@ class CatalogueController extends Controller
                 $updateData['service_id'] = $validated['service_id'];
             }
 
-            if (isset($validated['description'])) {
-                $updateData['description'] = $validated['description'];
+            if (array_key_exists('description', $validated)) {
+                $updateData['description'] = empty($validated['description']) ? null : $validated['description'];
             }
 
             // Handle image update (file or base64)
@@ -197,6 +207,18 @@ class CatalogueController extends Controller
                     Log::warning('Image processing failed, keeping existing image');
                 }
             }
+
+            // After update, ensure at least one field (description or image) is not null
+            $finalDescription = $updateData['description'] ?? $catalogue->description;
+$finalImage = $updateData['image'] ?? $catalogue->image;
+
+if (empty($finalDescription) && empty($finalImage)) {
+    return response()->json([
+        'success' => false,
+        'message' => 'Un catalogue doit avoir au moins une description ou une image'
+    ], 422);
+}
+
 
             $catalogue->update($updateData);
             $catalogue->load('service');
@@ -275,13 +297,21 @@ class CatalogueController extends Controller
             $validated = $request->validate([
                 'catalogues' => 'required|array',
                 'catalogues.*.id' => 'sometimes|exists:catalogues,id',
-                'catalogues.*.description' => 'required|string|max:1000',
+                'catalogues.*.description' => 'nullable|string|max:1000',
                 'catalogues.*.image_base64' => 'nullable|string'
             ]);
 
             $updatedCatalogues = [];
 
             foreach ($validated['catalogues'] as $catalogueData) {
+                // Validate that at least description or image is provided
+                if (empty($catalogueData['description']) && empty($catalogueData['image_base64'])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Chaque catalogue doit avoir au moins une description ou une image'
+                    ], 422);
+                }
+
                 if (isset($catalogueData['id'])) {
                     // Update existing catalogue
                     $catalogue = Catalogue::where('id', $catalogueData['id'])
@@ -290,7 +320,7 @@ class CatalogueController extends Controller
 
                     if ($catalogue) {
                         $updateData = [
-                            'description' => $catalogueData['description']
+                            'description' => empty($catalogueData['description']) ? null : $catalogueData['description']
                         ];
 
                         // Handle image update if provided
@@ -317,7 +347,7 @@ class CatalogueController extends Controller
 
                     $catalogue = Catalogue::create([
                         'service_id' => $serviceId,
-                        'description' => $catalogueData['description'],
+                        'description' => empty($catalogueData['description']) ? null : $catalogueData['description'],
                         'image' => $imagePath
                     ]);
                     $updatedCatalogues[] = $catalogue;
@@ -345,7 +375,7 @@ class CatalogueController extends Controller
     }
 
     /**
-     * Handle base64 image processing (same as ServiceController)
+     * Handle base64 image processing
      */
     private function handleBase64Image(string $base64Image): ?string
     {

@@ -9,13 +9,7 @@ use Illuminate\Routing\Controller;
 
 class ContactController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
-    {
-        //
-    }
+
 
     /**
      * Store a newly created resource in storage.
@@ -25,26 +19,11 @@ class ContactController extends Controller
         $contact = Contact::create($request->validated());
 
         return response()->json([
-            'message' => 'Votre message a été envoyé avec succès',
-            'contact' => $contact
+           'message'=>'votre message a été envoyé avec succès',
+           'contact' => $contact
         ], 201);
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    // public function update(Request $request, string $id)
-    // {
-    //     //
-    // }
 
     /**
      * Remove the specified resource from storage.

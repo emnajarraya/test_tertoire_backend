@@ -33,3 +33,4 @@ Route::delete('/catalogues/{id}', [CatalogueController::class, 'destroy']);
 // Routes pour les catalogues par service
 Route::get('/services/{serviceId}/catalogues', [CatalogueController::class, 'getByService']);
 Route::put('/services/{serviceId}/catalogues/bulk', [CatalogueController::class, 'bulkUpdateByService']);
+

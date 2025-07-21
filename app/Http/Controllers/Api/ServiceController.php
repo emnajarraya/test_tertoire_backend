@@ -70,7 +70,7 @@ class ServiceController extends Controller
                 $validatedData['image'] = $imagePath;
             }
 
-            $service = Service::create([
+            $service = Service  ::create([
                 'nom' => $validatedData['nom'],
                 'description' => $validatedData['description'],
                 'image' => $validatedData['image'] ?? null,
